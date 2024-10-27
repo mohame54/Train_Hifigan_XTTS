@@ -41,15 +41,16 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", default=2, type=int)
     parser.add_argument("--train_epochs", default=5, type=int)
     parser.add_argument("--test_epochs", default=1, type=int)
-    parser.add_argument("--dataset_name", default="libritts", type=str)
-    parser.add_argument("--mixed_pre", default=True, type=bool)
+    parser.add_argument("--output", default="libritts", type=str)
+    parser.add_argument("--mixed_pre", default=False, type=bool)
     args = parser.parse_args()
     config = GPTHifiganConfig(
-        batch_size=args.batch_size,
+        batch_size=args.train_batch_size,
         eval_batch_size=args.val_batch_size,
         num_loader_workers=args.num_workers,
         num_eval_loader_workers=args.num_workers,
         run_eval=True,
+        log_model_step=1000,
         test_delay_epochs=args.test_epochs,
         epochs=args.train_epochs,
         seq_len=8192,
@@ -68,7 +69,7 @@ if __name__ == "__main__":
         data_path=f"{args.dataset_path}/wavs",
         mel_path=f"{args.dataset_path}/gpt_latents",
         spk_path =f"{args.dataset_path}/speaker_embeddings",
-        output_path="outputs",
+        output_path=args.output,
         pretrain_path="XTTS-v2/model.pth",
         train_spk_encoder=False,
     )
