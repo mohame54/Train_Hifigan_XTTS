@@ -1,12 +1,12 @@
 import os
 from tqdm import tqdm
-
+import pandas as pd
 import numpy as np
 import torchaudio
 import torch
 from torch.utils.data import DataLoader
 from pydub import AudioSegment
-
+from argparse import ArgumentParser
 from TTS.tts.layers.xtts.trainer.dataset import XTTSDataset
 from TTS.tts.datasets import load_tts_samples
 from TTS.tts.layers.xtts.tokenizer import VoiceBpeTokenizer
@@ -16,6 +16,8 @@ from TTS.tts.models.xtts import load_audio
 
 from models.gpt_decode import GPTDecode
 from datasets.dataset_xtts import GPTXTTSDataset
+
+
 
 class GPTDecoder:
     def __init__(self, config, config_dataset):
@@ -95,8 +97,33 @@ class GPTDecoder:
                 with open(os.path.join(output_dir, "speaker_embeddings", file_name.replace(".wav", ".npy")), "wb") as f:
                     np.save(f, speaker_embedding[i].detach().squeeze(0).squeeze(1).cpu())
 
+
+def custom_formatter(root_path):  # pylint: disable=unused-argument
+    wavs_dir = os.path.join(root_path, "wavs")
+    meta_df = pd.read_csv(os.path.join(root_path, "metadata.csv"))
+    items = []
+    for i in range(len(meta_df)):
+        row = meta_df.iloc[i]
+        wav_path = os.path.join(wavs_dir, row['wav_path'])
+        text = row['text']
+        sp_id = row['speaker_id']
+        items.append({
+            "text":text,
+            "audio_file":wav_path,
+            "speaker_name":sp_id,
+            "root_path": root_path})
+    return items
+
 if __name__ == "__main__":
-    audio_config = XttsAudioConfig(sample_rate=22050, dvae_sample_rate=22050, output_sample_rate=24000)
+    parser = ArgumentParser()
+    parser.add_argument("--dataset_path", type=str)
+    parser.add_argument("--batch_size", default=16, type=int)
+    parser.add_argument("--sample_rate", default=24000, type=int)
+    parser.add_argument("--num_workers", default=2, type=int)
+    parser.add_argument("--dataset_name", default="libritts", type=str)
+    args = parser.parse_args()
+
+    audio_config = XttsAudioConfig(sample_rate=args.sample_rate, dvae_sample_rate=22050, output_sample_rate=24000)
     model_args = GPTArgs(
         max_conditioning_length=132300,  # 6 secs
         min_conditioning_length=66150,  # 3 secs
@@ -116,18 +143,17 @@ if __name__ == "__main__":
     config = GPTTrainerConfig(
         audio=audio_config,
         model_args=model_args,
-        batch_size = 4,
-        num_loader_workers=8,
+        batch_size = args.batch_size,
+        num_loader_workers=args.num_workers,
     )
 
     dataset_en = BaseDatasetConfig(
-        formatter="ljspeech",
-        dataset_name="ljspeech",
-        path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "LJSpeech-1.1"),
-        meta_file_train=os.path.join(os.path.dirname(os.path.abspath(__file__)), "LJSpeech-1.1/metadata.csv"),
+        formatter=custom_formatter,
+        dataset_name=args.dataset_name,
+        path=args.dataset_path,
         language="en",
     )
     dataset_config = [dataset_en]
 
     gpt_decode = GPTDecoder(config, dataset_config)
-    gpt_decode.generate(output_dir="Ljspeech_latents")
+    gpt_decode.generate(output_dir=args.dataset_name + "_latents")

@@ -1,6 +1,4 @@
-import os
-import random
-
+from argparse import ArgumentParser
 import torch
 from trainer import Trainer, TrainerArgs
 from TTS.utils.audio import AudioProcessor
@@ -35,30 +33,41 @@ class GPTHifiganTrainer:
         trainer.fit()
 
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("--dataset_path", type=str)
+    parser.add_argument("--train_batch_size", default=32, type=int)
+    parser.add_argument("--val_batch_size", default=32, type=int)
+    parser.add_argument("--sample_rate", default=24000, type=int)
+    parser.add_argument("--num_workers", default=2, type=int)
+    parser.add_argument("--train_epochs", default=5, type=int)
+    parser.add_argument("--test_epochs", default=1, type=int)
+    parser.add_argument("--dataset_name", default="libritts", type=str)
+    parser.add_argument("--mixed_pre", default=True, type=bool)
+    args = parser.parse_args()
     config = GPTHifiganConfig(
-        batch_size=64,
-        eval_batch_size=2,
-        num_loader_workers=4,
-        num_eval_loader_workers=4,
+        batch_size=args.batch_size,
+        eval_batch_size=args.val_batch_size,
+        num_loader_workers=args.num_workers,
+        num_eval_loader_workers=args.num_workers,
         run_eval=True,
-        test_delay_epochs=5,
-        epochs=1000,
+        test_delay_epochs=args.test_epochs,
+        epochs=args.train_epochs,
         seq_len=8192,
-        output_sample_rate=24000,
+        output_sample_rate=args.sample_rate,
         gpt_latent_dim = 1024,
         pad_short=2000,
         use_noise_augment=False,
         eval_split_size=10,
         print_step=25,
         print_eval=False,
-        mixed_precision=False,
+        mixed_precision=args.mixed_pre,
         lr_gen=1e-4,
         lr_disc=1e-4,
         use_stft_loss=True,
         use_l1_spec_loss=True,
-        data_path="Ljspeech_latents/wavs",
-        mel_path="Ljspeech_latents/gpt_latents",
-        spk_path ="Ljspeech_latents/speaker_embeddings",
+        data_path=f"{args.dataset_path}/wavs",
+        mel_path=f"{args.dataset_path}/gpt_latents",
+        spk_path =f"{args.dataset_path}/speaker_embeddings",
         output_path="outputs",
         pretrain_path="XTTS-v2/model.pth",
         train_spk_encoder=False,
