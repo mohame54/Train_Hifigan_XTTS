@@ -122,6 +122,7 @@ class GPTDecoder:
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--dataset_path", type=str)
+    parser.add_argument("--lang",default="en-us", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--sample_rate", default=24000, type=int)
     parser.add_argument("--num_workers", default=2, type=int)
@@ -156,7 +157,7 @@ if __name__ == "__main__":
         formatter=custom_formatter,
         dataset_name=args.dataset_name,
         path=args.dataset_path,
-        language="en",
+        language=args.lang,
     )
     dataset_config = [dataset_en]
 
