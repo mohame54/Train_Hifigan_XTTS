@@ -18,6 +18,23 @@ from models.gpt_decode import GPTDecode
 from datasets.dataset_xtts import GPTXTTSDataset
 
 
+def custom_formatter(root_path, meta, **kwargs):  # pylint: disable=unused-argument
+    wavs_dir = os.path.join(root_path, "wavs")
+    meta_df = pd.read_csv(os.path.join(root_path, "metadata.csv"))
+    items = []
+    for i in range(len(meta_df)):
+        row = meta_df.iloc[i]
+        wav_path = os.path.join(wavs_dir, row['wav_path'])
+        text = row['text']
+        sp_id = row['speaker_id']
+        items.append({
+            "text":text,
+            "audio_file":wav_path,
+            "speaker_name":sp_id,
+            "root_path": root_path})
+    return items
+
+
 
 class GPTDecoder:
     def __init__(self, config, config_dataset):
@@ -25,7 +42,7 @@ class GPTDecoder:
         self.config_dataset = config_dataset
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.train_samples, _ = load_tts_samples(
-            config_dataset
+            config_dataset, formatter=custom_formatter,
         )
         self.tokenizer = VoiceBpeTokenizer(config.model_args.tokenizer_file)
         self.dataset = GPTXTTSDataset(config, self.train_samples, self.tokenizer, config.audio.sample_rate, is_eval=True)
@@ -71,17 +88,19 @@ class GPTDecoder:
             cond_idxs = batch["cond_idxs"].to(self.device)
             cond_lens = batch["cond_lens"]
             code_lengths = torch.ceil(wav_lengths / self.model.xtts.gpt.code_stride_len).long()
-
+            self.model.eval()
             audio_16k = self.load_audio_16k(batch["filenames"]).to(self.device)
-            speaker_embedding = self.model.xtts.hifigan_decoder.speaker_encoder.forward(audio_16k, l2_norm=True).unsqueeze(-1)
+            with torch.no_grad():
+              with torch.autocast("cuda", dtype=torch.float16):
+                speaker_embedding = self.model.xtts.hifigan_decoder.speaker_encoder.forward(audio_16k, l2_norm=True).unsqueeze(-1)
 
-            latents = self.model.generate(
-                text_inputs, text_lengths, audio_codes, wav_lengths, cond_mels, cond_idxs, cond_lens
-            )
-
-            wav = []
-            for i in range(self.config.batch_size):
-                wav.append(self.model.xtts.hifigan_decoder(latents[i][: code_lengths[i]].unsqueeze(0), g=speaker_embedding[i]).detach().cpu().squeeze())
+                latents = self.model.generate(
+                    text_inputs, text_lengths, audio_codes, wav_lengths, cond_mels, cond_idxs, cond_lens
+                )
+                wav = []
+                for i in range(self.config.batch_size):
+                    wav.append(self.model.xtts.hifigan_decoder(latents[i][: code_lengths[i]].unsqueeze(0), g=speaker_embedding[i]).detach().cpu().squeeze().to(torch.float32))
+            latents = latents.to(torch.float32)
 
             for i in range(self.config.batch_size):
                 file_name = batch["filenames"][i].split("/")[-1]
@@ -98,26 +117,12 @@ class GPTDecoder:
                     np.save(f, speaker_embedding[i].detach().squeeze(0).squeeze(1).cpu())
 
 
-def custom_formatter(root_path):  # pylint: disable=unused-argument
-    wavs_dir = os.path.join(root_path, "wavs")
-    meta_df = pd.read_csv(os.path.join(root_path, "metadata.csv"))
-    items = []
-    for i in range(len(meta_df)):
-        row = meta_df.iloc[i]
-        wav_path = os.path.join(wavs_dir, row['wav_path'])
-        text = row['text']
-        sp_id = row['speaker_id']
-        items.append({
-            "text":text,
-            "audio_file":wav_path,
-            "speaker_name":sp_id,
-            "root_path": root_path})
-    return items
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--dataset_path", type=str)
-    parser.add_argument("--batch_size", default=16, type=int)
+    parser.add_argument("--batch_size", default=4, type=int)
     parser.add_argument("--sample_rate", default=24000, type=int)
     parser.add_argument("--num_workers", default=2, type=int)
     parser.add_argument("--dataset_name", default="libritts", type=str)
